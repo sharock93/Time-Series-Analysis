@@ -1,0 +1,929 @@
+---
+title: "Time series Analysis models to predict next slowdown/recession in US Economy"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+---
+# EXECUTIVE SUMMARY
+
+## This Project Focuses on Developing Time Series Analysis models to predict next slowdown/recession in US Economy based on naive, Exponential smoothening, ARIMA Methods and Neural Network.
+
+### Understanding S&P 500 data, Unemployment Data, Yield Curve and House Price Index is highly-relevent in Understanding the health of US Economy. We will see Later that these features are highly correlated (Statistically). 
+
+
+### For this project we leverage the horsepower of R-studio and deliver, where appropriate, gorgeous intractive data visualization using ggplot and plotly
+
+
+# Load Packages
+
+```{r }
+library(tidyr)
+library(lubridate)
+library(dplyr)
+library(ggplot2)
+library(markdown)
+library(caret)
+library(corrplot)
+library(plotly)
+library(forecast)
+library(tseries)
+
+```
+
+# Loading all Data Files
+  ## We Got all our Data from "Federal Reserve Economic Data" except S&P 500 Data which we got from yahoo.com 
+## Link to this website https://fred.stlouisfed.org/
+
+
+
+```{r}
+
+
+
+stockprice <- read.csv("SP500.csv")
+unemployment <- read.csv("Unrate.csv")
+yieldcurve <- read.csv("Yieldcurve.csv")
+ushpi <- read.csv("Usahouseprice.csv")
+
+
+
+
+```
+
+
+# Basic Summary Statistics:
+##  Summary Statistics for S&P Data:
+### SP 500 data has min-value of 735.1 with mean of 1729.3 and median of 1559.3, It doesn't have missing values
+
+## Summary Statistics for US House price Index Data:
+### HPI has min value of 306.5 with mean of 352.1 and median value of 346.8, It Doesn't have missing values
+
+## Summary Statistics for US Unemployment Rate Data:
+### Unemployment Rate data has min-value of 3.7 with mean of 6.46 and median value of 5.9, It Doesn't have missing values
+
+## Summary Statistics for US Yield Curve Data:
+### Yield Curve data has min-value of -0.130 with mean of 1.518 and median of 1.55, It Doesn't have missing values
+```{r}
+
+summary(stockprice)
+summary(ushpi)
+summary(unemployment)
+summary(yieldcurve)
+
+
+```
+
+
+
+## Seeing the First Few values of Data to get sense of what is there
+
+
+```{r}
+
+
+head(stockprice, 20)
+head(unemployment,20)
+head(yieldcurve,20)
+head(ushpi,20)
+
+```
+
+
+
+# Ploting Basic Graphs Using ggplot
+## S&P 500 
+### US Stock Market crashed after 2008 Recession. S&P 500 graph have trend and Random components
+### We see ups and downs in the data but not at regular interval of time so seasonal components might be missing.
+
+```{r}
+
+stockprice$DATE <- as.Date(stockprice$DATE)
+stockprice$SP500 <- as.numeric(stockprice$SP500)
+# Base plot with date axis
+p <- ggplot(data = stockprice, aes(x = DATE, y = SP500)) + ggtitle("S & P 500") +
+     geom_line(color = "#00AFBB", size = 1)
+# Set axis limits c(min, max)
+min <- as.Date("2007-01-01")
+max <- NA
+p + scale_x_date(limits = c(min, max))
+
+
+
+```
+
+## US Unemployment Rate
+### We see before the 2008 recession, unemployment rate was very low and after that, unemployment rate increased to its peak. From there it has reduced and touching the lowest unemployment rate of decade.We see trend and randomness in the data but the seasonal componenent seems to be missing from the data. 
+```{r}
+
+
+unemployment$DATE <- as.Date(unemployment$DATE)
+unemployment$UNRATE<-as.numeric(unemployment$UNRATE)
+ggplot(data = unemployment, aes(x = DATE, y = UNRATE)) + ggtitle("US Unemployment Rate") +
+     geom_line(color = "#00AFBB", size = 1)
+
+
+
+
+
+
+```
+
+
+
+
+## US Bond Yield Curve
+### US Bond yield curve inverted before 2008 recession, this was and has been very accurate predictor as its a investor sentiments predictor through treasury yield. Here also, we see trent and Random component in the data with seasonal component might be missing from the data.
+
+```{r}
+
+yieldcurve$DATE <- as.Date(yieldcurve$DATE)
+yieldcurve$T10Y2Y<-as.numeric(yieldcurve$T10Y2Y)
+ggplot(data = yieldcurve, aes(x = DATE, y = T10Y2Y)) + ggtitle("US Bond Yield Curve") +
+     geom_line(color = "#00AFBB", size = 1)
+
+
+```
+
+
+## US House Price Index
+### Us house price index crashed from its peak after 2008 recession and the prices were very low during 2012 and has been increasing from then.
+### This raph also shows Trend and random component wih seasonal component missing from data.
+
+```{r}
+
+ushpi$DATE <- as.Date(ushpi$DATE)
+ushpi$USSTHPI<-as.numeric(ushpi$USSTHPI)
+ggplot(data = ushpi, aes(x = DATE, y = USSTHPI)) + ggtitle("US House Price Index") +
+     geom_line(color = "#00AFBB", size = 1)
+
+
+```
+
+## Correlations
+
+### Unemployment rate and sp500 have high negative correlation meaning as sp500 increases unemployment rate decreases
+### sp 500 and yield curve also have high negative correlation 
+### sp500 and US House price index have positive correlation
+### Unemployment rate and yield curve have positive correlation
+### Unemployment rate and US house price index have negative correlation
+### Yield curve and Us house price have negative corelation which signifies US house price index doesn't responds fast to the recession centiments.
+
+
+
+## Making Time series Object and seeing first 20 values of each
+
+```{r}
+
+
+sp_500 <- ts(stockprice$SP500, start=c(2007,1), freq = 12)
+
+unemp <- ts(unemployment$UNRATE, start = c(2007,1), freq = 12)
+
+yield <- ts(yieldcurve$T10Y2Y, start = c(2007,1), freq = 12)
+
+
+hpi <- ts(ushpi$USSTHPI, start = c(2007,1), freq = 4)
+
+head(sp_500, 20)
+head(unemp,20)
+head(yield,20)
+head(hpi,20)
+
+```
+
+
+
+
+# Doing Mean and Naive Forecast
+
+### Mean and Naive Forecast of SP500
+
+### Naive forecast Predicts the next 10 values as 2900.45 as it naively takes last value.
+### Mean forecast Predicts Next 10 Values as 1729.289 as it takes Mean of the values. 
+### Bias Adjusted and Simple Back transformation points towards the same direction of forecasting that is lesss increase of sp500 Index
+
+
+```{r}
+
+
+fit_nsp500 <- naive(sp_500, h=10)
+print(fit_nsp500)
+
+fit_msp500 <- meanf(sp_500, h=10)
+print(fit_msp500)
+
+
+fc <- rwf(sp_500, drift=TRUE, lambda=0, h=10)
+fc2 <- rwf(sp_500, drift=TRUE, lambda=0, h=10,
+           biasadj=TRUE)
+
+
+autoplot(sp_500) +
+  autolayer(fc, series="Simple back transformation") +
+  autolayer(fc2, series="Bias adjusted",PI=FALSE) +
+  guides(color=guide_legend(title="Forecast"))  +labs(y= "S&P 500", x = "Days") 
+
+
+```
+
+
+
+
+## Forecast of Unemployment
+
+### Naive forecast Predicts the next 10 values as 3.8 as it naively takes last value.
+### Mean forecast Predicts Next 10 Values as 6.46 as it takes Mean of the values. 
+### Bias Adjusted and Simple Back transformation points towards the same direction of forecasting that is slight decrease in Unemployment rate. 
+
+
+
+```{r}
+
+
+fit_nunemp <- naive(unemp, h=10)
+print(fit_nunemp)
+
+fit_munemp<- meanf(unemp, h=10)
+# mean forecast
+print(fit_munemp)
+
+
+fc <- rwf(unemp, drift=TRUE, lambda=0, h=10)
+fc2 <- rwf(unemp, drift=TRUE, lambda=0, h=10,
+           biasadj=TRUE)
+
+
+autoplot(unemp) +
+  autolayer(fc, series="Simple back transformation") +
+  autolayer(fc2, series="Bias adjusted",PI=FALSE) +
+  guides(color=guide_legend(title="Forecast"))  +labs(y= "Unemployment", x = "Year") 
+
+
+```
+
+
+
+## Forecast of Yield curve
+
+### Naive forecast Predicts the next 10 values as 0.17 as it naively takes last value.
+### Mean forecast Predicts Next 10 Values as 1.51 as it takes Mean of the values. 
+### Bias Adjusted and Simple Back transformation points towards the same direction of forecasting that is constant over a period of time.
+
+
+
+```{r}
+
+
+fit_nyield <- naive(yield, h=10)
+print(fit_nyield)
+
+fit_myield <- meanf(yield, h=10)
+# mean forecast
+print(fit_myield)
+
+
+fc <- rwf(yield, h=10)
+fc2 <- rwf(yield, h=10,
+           biasadj=TRUE)
+
+
+autoplot(yield) +
+  autolayer(fc, series="Simple back transformation") +
+  autolayer(fc2, series="Bias adjusted",PI=FALSE) +
+  guides(color=guide_legend(title="Forecast"))  +labs(y= "Yield Curve", x = "Days") 
+
+
+```
+
+
+
+## Forecast of House Price index
+
+### Naive forecast Predicts the next 10 values as 432.14 as it naively takes last value.
+### Mean forecast Predicts Next 10 Values as 352.11 as it takes Mean of the values. 
+### Bias Adjusted and Simple Back transformation points towards the same direction of forecasting that is slight increase over a period of time.
+
+
+```{r}
+
+
+fit_nhpi <- naive(hpi, h=10)
+print(fit_nhpi)
+
+fit_mhpi <- meanf(hpi, h=10)
+# mean forecast
+print(fit_mhpi)
+
+
+fc <- rwf(hpi, drift=TRUE, lambda=0, h=10)
+fc2 <- rwf(hpi, drift=TRUE, lambda=0, h=10,
+           biasadj=TRUE)
+
+
+autoplot(hpi) +
+  autolayer(fc, series="Simple back transformation") +
+  autolayer(fc2, series="Bias adjusted",PI=FALSE) +
+  guides(color=guide_legend(title="Forecast"))  +labs(y= "House Price Index", x = "year") 
+
+
+```
+
+
+# Decomposition of the data
+
+
+## we decompose the data to get better understanding of seasonal, trend and Remainder components
+
+## Decomposition of S&P 500, Unemployment rate, House price Index and Yield Curve Data:
+### Trend: Data has a trend component and that validate our point, when we looked data graph Naively
+### Seasonal: Seasonal component is not varying much over period of time so might not have much of seasonal component.
+### Reminder: Remainder component that is full data minus seasonal and trend is present
+
+```{r}
+
+decom1 <- decompose(hpi)
+autoplot(decom1) + ggtitle("Decomposition of US House Price Index")
+decom2 <- decompose(unemp)
+autoplot(decom2) + ggtitle("Decomposition of US Unemployment Index")
+decom3 <- decompose(sp_500)
+autoplot(decom3) + ggtitle("Decomposition of US S&P Data")
+decom4 <- decompose(yield)
+autoplot(decom4) + ggtitle("Decomposition of US Yieldcurve")
+
+
+```
+
+
+## Exponential Smoothening
+### Based on the description of Trend and Seasonality of the Data
+### The more recent the observation the higher the associated weights. This framework generates reliable forecasts quickly and for a wide range of time series, which is a great advantage and of major importance to applications in industry.
+
+
+## Simple Exponential smoothening
+### This method is suitable for forecasting data with no clear trend and or seasonal pattern.
+### We can see that simple exponential smoothening has predicted all the values of four data set to be constant.
+
+```{r}
+
+sp <- window(sp_500, start=2007)
+  ### Estimate parameters
+fc <- ses(sp, h=5)
+summary(fc[["model"]])
+  ### Accuracy of one-step-ahead 
+round(accuracy(fc, 2))
+autoplot(fc) +
+  autolayer(fitted(fc), series="Fitted") + theme_classic() +
+  ylab("S&P 500") + xlab("Year")
+
+
+hpi <- window(hpi, start=2007)
+  ### Estimate parameters
+fc <- ses(hpi, h=5)
+summary(fc[["model"]])
+  ### Accuracy of one-step-ahead 
+round(accuracy(fc, 2))
+autoplot(fc) +
+  autolayer(fitted(fc), series="Fitted") + theme_classic() +
+  ylab("US House Price Index") + xlab("Year")
+
+
+unemp <- window(unemp, start=2007)
+  ### Estimate parameters
+fc <- ses(unemp, h=5)
+summary(fc[["model"]])
+  ### Accuracy of one-step-ahead 
+round(accuracy(fc, 2))
+autoplot(fc) +
+  autolayer(fitted(fc), series="Fitted") + theme_classic() +
+  ylab("US Unemployment Rate") + xlab("Year")
+
+
+yieldcurve1 <- window(yield, start=2007)
+  ### Estimate parameters
+fc <- ses(yieldcurve1, h=5)
+summary(fc[["model"]])
+  ### Accuracy of one-step-ahead 
+round(accuracy(fc, 2))
+autoplot(fc) +
+  autolayer(fitted(fc), series="Fitted") + theme_classic() +
+  ylab("US Yield Curve") + xlab("Year")
+
+
+
+
+```
+
+
+
+## Trends Method
+### This method is the extension of simple exponential smoothening to allow forecasting data with trend.
+### S&P 500: Both Damped and Holt's Trend Method predict stock market to grow further
+### Unemployment Rate:Both Damped and Holt's trend Method predict the Unemployment rate to go down.
+### House Price Index: Although Holt's method is bulish on predictions with upward trend, Damped seems a little cautious.
+### Yield Curve: Both method Shows yield curve to remain constant going further with very litle upward trend in Holt's method.
+```{r}
+  
+sp <- window(sp_500, start= 2007)
+holtfc1 <- holt(sp, h = 10)
+holtfc2 <- holt(sp, damped = TRUE, h = 10)
+autoplot(sp) + 
+  autolayer(holtfc1, series = "Holt's method", PI = FALSE) +  
+  autolayer(holtfc2, series = "Damped method", PI = FALSE) +  
+  xlab("Year") + ylab("S&P 500")
+
+  
+un <- window(unemp, start= 2007)
+holtfc1 <- holt(un, h = 10)
+holtfc2 <- holt(un, damped = TRUE, h = 10)
+autoplot(un) + 
+  autolayer(holtfc1, series = "Holt's method", PI = FALSE) +  
+  autolayer(holtfc2, series = "Damped method", PI = FALSE) +  
+  xlab("Year") + ylab("US Unemployment Rate")
+
+
+ 
+hp <- window(hpi, start= 2007)
+holtfc1 <- holt(hp, h = 10)
+holtfc2 <- holt(hp, damped = TRUE, h = 10)
+autoplot(hp) + 
+  autolayer(holtfc1, series = "Holt's method", PI = FALSE) +  
+  autolayer(holtfc2, series = "Damped method", PI = FALSE) +  
+  xlab("Year") + ylab("US House Price Index")
+
+  
+yi <- window(yield, start= 2007)
+holtfc1 <- holt(yi, h = 10)
+holtfc2 <- holt(yi, damped = TRUE, h = 10)
+autoplot(yi) + 
+  autolayer(holtfc1, series = "Holt's method", PI = FALSE) +  
+  autolayer(holtfc2, series = "Damped method", PI = FALSE) +  
+  xlab("Year") + ylab("US Yield Bond Curve")
+
+```
+
+
+
+
+
+## Seasonal Methods
+### Holt and winters extended Holt's method to capture seasonability.The Holt-Winters seasonal method comprises the forecast equation and three smoothing equations of level, trend and seasonal component.
+### In these we have showed holt-winter additive and multiplicative methods with their decomposition to get the full picture.
+### S&P 500: Multiplicative forecast is more bulish than additive forecast.
+### Unemployment Rate: Though additive methods shows a little constant forecast, Holt-winters multiplicative forecast shows an upward trend in unemloyment rate.
+### House Price Index: Both Multiplicative and additive components show same upward trend line predictions with decomposition showing some varying seasonal component.
+### Yield Curve: Both Multiplicative and additive methods shows downward trend line and hence indicates inversion of yield curve.
+
+```{r}
+  # HOlt-Winter's Additive & Multiplicative methods
+sp <- window(sp_500, start=2007)
+hwfc1 <- hw(sp, seasonal="additive")
+hwfc2 <- hw(sp, seasonal="multiplicative")
+hwfc1[["model"]]
+hwfc1[["model"]]
+autoplot(sp) +
+  autolayer(hwfc1, series="HW additive forecasts", PI=FALSE) +
+  autolayer(hwfc2, series="HW multiplicative forecasts",
+            PI=FALSE) +
+  xlab("Year") + ylab("S&P 500") +
+  ggtitle("S & P 500 Index") +
+  guides(colour=guide_legend(title="Forecast"))
+autoplot(hwfc1[['model']])
+autoplot(hwfc2[['model']])
+
+
+hp <- window(hpi, start=2007)
+hwfc1 <- hw(hp, seasonal="additive")
+hwfc2 <- hw(hp, seasonal="multiplicative")
+hwfc1[["model"]]
+hwfc1[["model"]]
+autoplot(hp) +
+  autolayer(hwfc1, series="HW additive forecasts", PI=FALSE) +
+  autolayer(hwfc2, series="HW multiplicative forecasts",
+            PI=FALSE) +
+  xlab("Year") + ylab("House Price Index") +
+  ggtitle("US House Price Index") +
+  guides(colour=guide_legend(title="Forecast"))
+autoplot(hwfc1[['model']])
+autoplot(hwfc2[['model']])
+
+yi <- window(yield, start=2007)
+hwfc1 <- hw(yi, seasonal="additive")
+hwfc2 <- hw(yi )
+hwfc1[["model"]]
+hwfc1[["model"]]
+autoplot(yi) +
+  autolayer(hwfc1, series="HW additive forecasts", PI=FALSE) +
+  autolayer(hwfc2, series="HW multiplicative forecasts",
+            PI=FALSE) +
+  xlab("Year") + ylab("Yield Curve") +
+  ggtitle("yield Curve Rates") +
+  guides(colour=guide_legend(title="Forecast"))
+autoplot(hwfc1[['model']])
+autoplot(hwfc2[['model']])
+
+un <- window(unemp, start=2007)
+hwfc1 <- hw(un, seasonal="additive")
+hwfc2 <- hw(un, seasonal="multiplicative")
+hwfc1[["model"]]
+hwfc1[["model"]]
+autoplot(un) +
+  autolayer(hwfc1, series="HW additive forecasts", PI=FALSE) +
+  autolayer(hwfc2, series="HW multiplicative forecasts",
+            PI=FALSE) +
+  xlab("Year") + ylab("Unemployment Rate") +
+  ggtitle("US Unemployment Rate") +
+  guides(colour=guide_legend(title="Forecast"))
+autoplot(hwfc1[['model']])
+autoplot(hwfc2[['model']])
+
+
+```
+
+
+## ETS Models
+### These are reffered to as State space model.Each model consists of a measurement equation that describes the observed data, and some state equations that describe how the unobserved components or states (Error, trend, seasonal) change over time.It selects model looing into AIC values.
+
+### S&P 500:It's an additive error model (A,N,N).This predicts no change in sttock price with time.
+### Unemployment Rate: It's an multiplicative error with additive trend (M,A,N).Unemployment prediction shows a downward trend.
+### House Price Index: It's an Additive trend and Additive erroer model (A,A,N). It predicts US house price Index to grow as we move forward.
+### Yield Curve:It shows an Additive erroe with no trend and seasonality(A,N,N).It shows a constant yield curve prediction.
+
+```{r}
+sp <- window(sp_500, start=2007)
+fit <- ets(sp)
+summary(fit)
+autoplot(fit)
+cbind('Residuals' = residuals(fit), 'Forecast errors' = residuals(fit,type='response')) %>%
+  autoplot(facet=TRUE) + 
+  xlab("Year") + ylab("")
+### Forecasts with ETS Models
+fit %>% forecast(h=5) %>%
+  autoplot() + ylab("S&P 500 Index")
+
+
+hp <- window(hpi, start=2007)
+fit <- ets(hp)
+summary(fit)
+autoplot(fit)
+cbind('Residuals' = residuals(fit), 'Forecast errors' = residuals(fit,type='response')) %>%
+  autoplot(facet=TRUE) + 
+  xlab("Year") + ylab("")
+### Forecasts with ETS Models
+fit %>% forecast(h=5) %>%
+  autoplot() + ylab("US House Price Index")
+
+
+un <- window(unemp, start=2007)
+fit <- ets(un)
+summary(fit)
+autoplot(fit)
+cbind('Residuals' = residuals(fit), 'Forecast errors' = residuals(fit,type='response')) %>%
+  autoplot(facet=TRUE) + 
+  xlab("Year") + ylab("")
+### Forecasts with ETS Models
+fit %>% forecast(h=5) %>%
+  autoplot() + ylab("US Unemployment Rate")
+
+
+yi <- window(yield, start=2007)
+fit <- ets(yi)
+summary(fit)
+autoplot(fit)
+cbind('Residuals' = residuals(fit), 'Forecast errors' = residuals(fit,type='response')) %>%
+  autoplot(facet=TRUE) + 
+  xlab("Year") + ylab("")
+### Forecasts with ETS Models
+fit %>% forecast(h=5) %>%
+  autoplot() + ylab("US Yield Curve")
+
+```
+
+
+
+## Forecasting Accuracy of ETS
+
+### We will see MAPE and MAE forecasting errors to predict our accuracy of the model.
+### We can see that ets model have high forecasting errors.
+
+
+```{r}
+
+# Forecasting accuracy for ETS
+
+sp500 <- window(sp_500, start = 2007, end = c(2017,12))
+test1 <- window(sp_500, start = c(2018))
+
+hpiu <- window(hpi, start = 2007, end = c(2016,4))
+test2 <- window(hpi, start = 2017)
+
+unempu <- window(unemp, start = 2007, end = c(2017,12))
+test3 <- window(unemp, start = c(2018))
+
+yieldu <- window(yield, start = 2007, end = c(2017,12))
+test4 <- window(yield, start = c(2018))
+
+
+fit1 <- ets(sp500)
+train1 <- forecast(fit1, h=16)
+accuracy(train1, test1)
+
+fit2 <- ets(sp500)
+train2 <- forecast(fit2, h=08)
+accuracy(train2, test2)
+
+fit3 <- ets(sp500)
+train3 <- forecast(fit3, h=15)
+accuracy(train3, test3)
+
+fit4 <- ets(sp500)
+train4 <- forecast(fit4, h=15)
+accuracy(train4, test4)
+```
+
+
+
+
+
+
+
+
+## Arima Model Forecasting
+### Arima Models aims to describe auto correlations in the data. Exponential smothening and ARIMA models are two widely used approaches.
+
+
+## Stationarity
+### Time series with Trend or seasonality is not stationary but can be of cyclic. For ARIMA model predictions we need to make sure that time series is stationary.
+
+
+## We can see clearly that all these series are not stationary by simply plotting them again as all these have trend component in it.
+```{r}
+autoplot(sp_500) + ggtitle("S&P 500")
+autoplot(hpi) + ggtitle("US House Price Index")
+autoplot(unemp) + ggtitle("US Unemployment Rate")
+autoplot(yield) + ggtitle("Yield Curve")
+
+```
+
+## Test for stationarity and Differencing required 
+### We test for staionarity and check how many differencing required to make it stationary.
+
+```{r}
+# Null Hypothesis is that the series is stationary
+library(urca)
+summary(ur.kpss(sp_500))
+summary(ur.kpss(hpi))
+summary(ur.kpss(unemp))
+summary(ur.kpss(yield))
+
+sp1<- ndiffs(sp_500)
+hp1 <-ndiffs(hpi)
+un1<- ndiffs(unemp)
+yi1 <-ndiffs(yield)
+
+
+print(paste0("Differencing required to make S&P 500 Index stationary: " , sp1))
+print(paste0("Differencing required to make House Price Index stationary: " , hp1))
+print(paste0("Differencing required to make Unemployment Rate stationary: " , un1))
+print(paste0("Differencing required to make yieldcurve stationary: " , yi1))
+
+```
+
+## Making Series Stationary
+
+### We makee the series Stationary and see by plotting them.All observations should have same mean.
+
+```{r}
+sp2 <- diff(sp_500)
+hp_fd <- diff(hpi)
+hp2 <- diff(hp_fd)
+un_fd <- diff(unemp)
+un2 <- diff(un_fd)
+yi_fd <- diff(yieldcurve1)
+yi2 <- diff(yi_fd)
+
+autoplot(sp2) + ggtitle("S&P 500")
+autoplot(hp2) + ggtitle("US House Price Index")
+autoplot(un2) + ggtitle("US Unemployment Rate")
+autoplot(yi2) + ggtitle("US Yield Curve")
+
+```
+
+## Finding (p,d,q) values for ARIMA Modelling
+### P specifies the lagged value predictor of order p
+### d specifies degree of first differencing involved
+### q specifies forcast errors in regression like model of order q
+
+### It is sometimes possible to use the ACF and PACF plot, to determine appropriate values of p and q
+### (p,d,q) values for US s&P 500: (0,1,0)
+### (p,d,q) values for US House Price Index: (2,2,0)
+### (p,d,q) values for US Unemployment Rate: (5,2,0)
+### (p,d,q) values for US yield Curve: (4,1,0)
+```{r}
+ggAcf(sp2) + ggtitle("Auto correlation plot of S&P 500")
+ggPacf(sp2)+ ggtitle("Partial-Auto correlation plot of S&P 500")
+
+ggAcf(hp2) + ggtitle("Auto correlation plot of US House price index ")
+ggPacf(hp2) +ggtitle("Partial-Auto correlation plot of US House price index ")
+
+ggAcf(un2) + ggtitle("Auto correlation plot of US Unemployment Rate ")
+ggPacf(un2) +ggtitle("Partial-Auto correlation plot of US Unemployment Rate ")
+
+ggAcf(yi2) + ggtitle("Auto correlation plot of US Yield Curve ")
+ggPacf(yi2) +ggtitle("Partial-Auto correlation plot of US Yield Curve ")
+
+```
+
+### We can also use Auto arima function of forecast package to get (p,d,q) values
+```{r}
+auto.arima(sp_500)
+auto.arima(hpi)
+auto.arima(unemp)
+auto.arima(yield)
+
+```
+
+### Comapairing AIC/ BIC values, fitting and forecasting the final models
+
+### S&P 500: It predict 10 month upward trend but with pessimism in the stock market at 95% confidence interval 
+### Unemployment Rate: It predicts constant downward trend in US unemployment rate at 95% confidence interval
+### House Price Index: It predicts upward trend in US house price Index at 95 % confidence interval
+### Yield Curve: It predicts yield curve inverts towards the end of 2019 and towards the starting of 2010. 
+```{r}
+Arima(unemp, order = c(5,2,0))
+Arima(yield, order = c(4,1,0))
+
+fit1 <- auto.arima(sp_500, seasonal = FALSE)
+fit1 %>% forecast(h=10) %>% autoplot(include=80) + xlab("Year") +  ylab("S & P 500") + ggtitle("US S & P 500 Index")
+
+
+fit2 <- auto.arima(hpi, seasonal = FALSE)
+fit2 %>% forecast(h=10) %>% autoplot(include=80) + xlab("Year") +  ylab("House Price Index") + ggtitle("US House Price Index")
+
+fit3 <- auto.arima(unemp, seasonal = FALSE)
+fit3 %>% forecast(h=10) %>% autoplot(include=80) + xlab("Year") +  ylab("Unemployment Rate") + ggtitle("US Unemployment Rate")
+
+fit4 <- auto.arima(yield, seasonal = FALSE)
+fit4 %>% forecast(h=10) %>% autoplot(include=80) + xlab("Year") +  ylab("Yield Curve") + ggtitle("US Yield Curve Rate")
+
+
+
+
+```
+
+## Forecasting Accuracy of Arima Model
+
+### Arima Model have High Forecasting Accuracy as MAPE, MAE and even RMSE have very less values.So, we will Use ARIMA model for our final conclusions.
+```{r}
+
+# Forecasting accuracy for ARIMA
+
+sp500 <- window(sp_500, start = 2007, end = c(2017,12))
+test1 <- window(sp_500, start = c(2018))
+
+hpiu <- window(hpi, start = 2007, end = c(2016,4))
+test2 <- window(hpi, start = 2017)
+
+unempu <- window(unemp, start = 2007, end = c(2017,12))
+test3 <- window(unemp, start = c(2018))
+
+yieldu <- window(yield, start = 2007, end = c(2017,12))
+test4 <- window(yield, start = c(2018))
+
+
+fit1 <- auto.arima(sp500, seasonal = FALSE)
+train1 <- forecast(fit1, h=16)
+accuracy(train1, test1)
+
+fit2 <- auto.arima(hpiu, seasonal = FALSE)
+train2 <- forecast(fit2, h=08)
+accuracy(train2, test2)
+
+fit3 <- auto.arima(unempu, seasonal = FALSE)
+train3 <- forecast(fit3, h=15)
+accuracy(train3, test3)
+
+fit4 <- auto.arima(yieldu, seasonal = FALSE)
+train4 <- forecast(fit4, h=15)
+accuracy(train4, test4)
+```
+
+
+
+## Residual Diagnosics 
+
+### Our next step is to run a residual diagnostics to ensure our residuals are white noise under our initial assumptions.
+### Although not perfect we can see that the residuals do display a normal distribution.
+
+```{r}
+checkresiduals(fit1)
+checkresiduals(fit2)
+checkresiduals(fit3)
+checkresiduals(fit4)
+
+```
+
+
+
+
+
+## Neural Networks Forecasting
+
+### Artificial neural networks are forecasting methods that are based on simple mathematical models of the brain. They allow complex nonlinear relationships between the response variable and its predictors.
+
+### S&P 500: Neural Network Predicts downward trend in the S&P 500 Index, so there appears to be caution in the market going forward.  
+### Unemployment Rate: Neural Network predicts a upward constant unemployment rate, again shows a caution in the market towards recession.
+### House Price Index: Neural Network predicts house prices start to fall towards the end of 2019 and start of 2020
+### Yield Curve: Yield Curve increases but has a huge error in MAPE training set and that explains the exception .
+
+
+
+
+```{r}
+lambda1 <- BoxCox.lambda(sp_500)
+lambda2 <- BoxCox.lambda(hpi)
+lambda3 <- BoxCox.lambda(unemp)
+lambda4 <- BoxCox.lambda(yield)
+fit1 <- nnetar(sp_500, lambda = lambda1) 
+fit_net <- forecast(fit1, h = 10, PI = TRUE)
+autoplot(fit_net, 
+    holdout = sp_500) + xlab("Year") +  ylab("S & P 500") + ggtitle("US S & P 500 Index")
+
+fit2 <- nnetar(hpi, lambda = lambda2)
+fit_net <- forecast(fit2, h = 10, PI = TRUE)
+autoplot(fit_net,
+    holdout = hpi) + xlab("Year") +  ylab("House Price Index") + ggtitle("US House Price Index")
+
+
+fit3 <- nnetar(unemp, lambda = lambda3)
+fit_net <- forecast(fit3, h = 10, PI = TRUE)
+autoplot(fit_net,
+    holdout = unemp) + xlab("Year") +  ylab("Unemployment Rate") + ggtitle("US Unemployment Rate")
+
+
+fit4 <- nnetar(yield, lambda = lambda4)
+fit_net <- forecast(fit4, h = 10, PI = TRUE)
+autoplot(fit_net,
+    holdout = yield)+ xlab("Year") +  ylab("Yield Curve") + ggtitle("US Yield Curve Rate")
+
+```
+ 
+ 
+ 
+## Forecasting Accuracy for Neural Network Time series Analysis
+
+### Neural Network did pretty good on accuracy as MAE and MAPE errors had very less values except for the test set of yield curve.
+
+```{r}
+
+# Forecasting accuracy for Neural Network
+
+SP500 <- window(sp_500, start = 2007, end = c(2017,12))
+test1 <- window(sp_500, start = c(2018))
+
+hpiu <- window(hpi, start = 2007, end = c(2016,4))
+test2 <- window(hpi, start = 2017)
+
+unempu <- window(unemp, start = 2007, end = c(2017,12))
+test3 <- window(unemp, start = c(2018))
+
+yieldu <- window(yield, start = 2007, end = c(2017,12))
+test4 <- window(yield, start = c(2018))
+
+
+fit1 <- nnetar(SP500, lambda = lambda1)
+train1 <- forecast(fit1, h=16, PI = TRUE)
+accuracy(train1, test1)
+
+fit2 <- nnetar(hpiu, lambda = lambda2)
+train2 <- forecast(fit2, h=08, PI = TRUE)
+accuracy(train2, test2)
+
+fit3 <- nnetar(unempu, lambda = lambda3)
+train3 <- forecast(fit3, h=15, PI = TRUE)
+accuracy(train3, test3)
+
+fit4 <- nnetar(yieldu, lambda = lambda4)
+train4 <- forecast(fit4, h=15, PI = TRUE)
+accuracy(train4, test4)
+```
+
+
+
+# CONCLUSIONS
+
+## Model Selection
+
+### We Did Forecasting with Naive Models, ETS models, ARIMA and Neural Network models for S&P 500 Data, US Unemployment Rate, US House Price Index and US Yield Curve. We saw the Errors associated with all the models and found that perhaps ARIMA model and Neural Networks have the lowest forecasting Errors.So, We can see combined ARIMA and Neural Network results with 95% confidence Interval to get the sense of the data.
+
+### We see S&P 500 data have clear deteorating optimism in both ARIMA and Neural Networks. It might mean inverstors will have their reservations going forward at the end of 2019.
+### According to ARIMA Ever Rising US house price Index is also a worrying sign as it might show the inflated market and psuedo-optimism. On the other hand neural network shows a caution in the market regarding the house price Index.
+### According to ARIMA Unemployment Rate shows a downward constant trend as this rate is the lowest of the decade and again a worrying sign  of pseudo- optimism. On the other hand Neural network shows a slight decrease in employment rate and hence can be considered a caution by the market.
+### Yield curve is and has been the most accurate predictor of Recession. Yield Curve Inversion means that investors are less optimist about about the short term return on Bonds than long term (10 years) return. ARIMA model prediction of yield curve Inversion at the end of 2019 is a sign of Investor sentiments and the most worrying picture we have. Neural Network showsheathy yield curve but has huge error in MAPE.
+
+## All said, These are only predictors and are basically dependent on previous or lagged values. We can see the positive and negative sentiments but can't forecast anything with utmost certainity.
+
+```{r}
+                ##################### THE END ##########################
+
+```
